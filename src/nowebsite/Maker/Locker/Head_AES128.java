@@ -126,8 +126,7 @@ public class Head_AES128 {
         return fileName;
     }
 
-/*
-    // 测试示例
+/*测试示例
     public static void main(String[] args) {
         String inputFile = "path/to/input/file";
         String encryptedFile = "path/to/encrypted/file";
