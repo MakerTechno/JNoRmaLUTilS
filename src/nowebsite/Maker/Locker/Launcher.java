@@ -1,10 +1,15 @@
 package nowebsite.Maker.Locker;
 
 import javax.swing.*;
+import java.util.logging.Logger;
 
 public class Launcher {
+    public static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
-    /**尝试删两次，不成功说明程序还在运行(GUI会每200毫秒检查文件存在，不存在时会再新建一个)*/
+    /**Try to stop others twice.
+     * If not it means the app is still running.
+     * (GUI will check the exist file every 200 seconds，when it's not exist GUI will create one.)
+     */
     public static void main(String[] args) {
         if (startGUI())if (startGUI())System.out.println("检测到当前系统有本程序运行，请先关闭程序再重新运行");
     }
