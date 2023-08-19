@@ -1,10 +1,11 @@
 package nowebsite.Maker.Locker;
 
 import javax.swing.*;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class Launcher {
-    public static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+    public static final Logger LOGGER = Logger.getLogger(Launcher.class.getName());
 
     /**Try to stop others twice.
      * If not it means the app is still running.
@@ -21,12 +22,12 @@ public class Launcher {
             try {
                 Thread.sleep(300);
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                LOGGER.log(Level.SEVERE, "Launcher was thrown an sleeping exception on Thread.", e);
             }
             return true;
         } else {
             SwingUtilities.invokeLater(() -> {
-                GUI gui = new GUI();
+                GUI gui = new GUI(LOGGER);
                 gui.setVisible(true);
             });
             return false;

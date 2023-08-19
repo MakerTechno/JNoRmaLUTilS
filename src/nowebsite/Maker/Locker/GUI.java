@@ -11,11 +11,19 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
 import java.io.IOException;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
 import java.util.Objects;
 import java.util.Random;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
-/**加密解密软件のGUI*/
+/**加密解密软件のGUI
+ * @author MakerTechno
+ * 这个类使用中文注解哦~
+ */
 public class GUI extends JFrame {
+    public final Logger LOGGER;
 
     /**这是加密按钮*/
     private final JButton ENCRYPT_BUTTON = new JButton("加密");
@@ -34,9 +42,11 @@ public class GUI extends JFrame {
 
 
     /**构造函数负责初始化整个GUI图形界面*/
-    public GUI() {
+    public GUI(Logger logger) {
         /*先头初始化*/
         this.generalSetUp(this, FILE);
+        /*初始化Logger*/
+        LOGGER = logger;
         /*主体部分*/
         JPanel mainPanel = getNewBorderPanel();
 
@@ -177,9 +187,9 @@ public class GUI extends JFrame {
         file.delete();
     }
 
-    /**供给提示弹窗の重写+初始化操作,唯一一个方法直接引用主类的地方*/
+    /**供给提示弹窗の重写+初始化操作,唯一一个方法直接引用主类变量的地方*/
     private void dialogInit(String s){
-        dialog = new AskForReWrite(this, true, s);
+        dialog = new AskForReWrite(this, true, s, LOGGER);
     }
 
     /**一个文件选择器*/
@@ -211,7 +221,13 @@ public class GUI extends JFrame {
             return;
         }
         /*执行加密*/
-        Head_AES128.encryptFileWithName(new File(inputFile), encryptedFile, password);
+
+        try {
+            AESLogicLib.KeyFormer former = new AESLogicLib.KeyFormer(password, LOGGER);
+            AESLogicLib.encryptFileWithName(new File(inputFile), encryptedFile,  former, LOGGER);
+        } catch (SaltInputException | NoSuchAlgorithmException | InvalidKeySpecException e) {
+            LOGGER.log(Level.SEVERE, "Exception was thrown during encrypt file:", e);
+        }
 
         /*任务结束，停止阻塞*/
         unTrace();
@@ -234,19 +250,31 @@ public class GUI extends JFrame {
             return;
         }
 
-        /*执行解密*/
-        String newName = Head_AES128.decryptFileWithName(new File(inputFile), decryptedFile, password);
-        /*抓取解密错误*/
-        if(Objects.equals(newName, "error")){
-            JOptionPane.showMessageDialog(null, "也许是秘钥错误，请检查秘钥是否正确！", "发生严重错误", JOptionPane.ERROR_MESSAGE);
-            decryptedFile.delete();
-            unTrace();
-            return;
-        }
 
-        /*重命名解密文件,如果冲突则询问*/
-        File newFile = new File(decryptedFile.getParentFile().getAbsolutePath() + File.separator + newName);
-        decryptedFile.renameTo(askForSameNameFileRename(decryptedFile, newFile));
+        /*执行解密*/
+        try {
+            AESLogicLib.KeyFormer former = new AESLogicLib.KeyFormer(password, LOGGER);
+            String newName = AESLogicLib.decryptFileWithName(new File(inputFile), decryptedFile, former, LOGGER);
+
+            /*抓取解密错误*/
+            if(Objects.equals(newName, "error")){
+                JOptionPane.showMessageDialog(null, "也许是秘钥错误，请检查秘钥是否正确！", "发生严重错误", JOptionPane.ERROR_MESSAGE);
+                decryptedFile.delete();
+                unTrace();
+                return;
+            }
+
+            /*重命名解密文件,如果冲突则询问*/
+            File newFile = new File(decryptedFile.getParentFile().getAbsolutePath() + File.separator + newName);
+            decryptedFile.renameTo(askForSameNameFileRename(decryptedFile, newFile));
+
+        } catch (SaltInputException e) {
+            throw new RuntimeException(e);
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        } catch (InvalidKeySpecException e) {
+            throw new RuntimeException(e);
+        }
 
         //任务结束，停止阻塞
         unTrace();
@@ -341,11 +369,13 @@ public class GUI extends JFrame {
 
 /**一个修改自JDialog的类，添加了初始化操作与一些成员变量以匹配GUI需求*/
 class AskForReWrite extends JDialog{
+    public final Logger LOGGER;
     public boolean answer = false;
     public boolean knockBack = false;
 
-    public AskForReWrite(Frame parent, boolean isTrace, String fileName){
+    public AskForReWrite(Frame parent, boolean isTrace, String fileName, Logger logger){
         super(parent, isTrace);
+        LOGGER = logger;
         /*基础初始化*/
         generalSetup();
 
@@ -406,7 +436,7 @@ class AskForReWrite extends JDialog{
                 try {
                     Thread.sleep(200);
                 } catch (InterruptedException ex) {
-                    ex.printStackTrace();
+                   LOGGER.log(Level.SEVERE, "JDialog was thrown an sleeping exception on Thread.", ex);
                 }
                 super.windowClosing(e);
             }
