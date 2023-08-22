@@ -1,6 +1,5 @@
 package nowebsite.Maker.Locker;
 
-import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -15,15 +14,18 @@ import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Objects;
 import java.util.Random;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**加密解密软件のGUI
  * @author MakerTechno
- * 这个类使用中文注解哦~
+ * 这个类使用中文注释哦~
  */
 public class GUI extends JFrame {
     public final Logger LOGGER;
+    public static final Timer TIMER = new Timer();
 
     /**这是加密按钮*/
     private final JButton ENCRYPT_BUTTON = new JButton("加密");
@@ -35,31 +37,36 @@ public class GUI extends JFrame {
     /**这tm是之前试了半天的系统临时文件夹获取方法*/
     public static final String TEMP_PATH = System.getenv("Temp");
     /**这是检查用的文件的位置*/
-    public static final File FILE = new File(TEMP_PATH+File.separator+"tmp_isUsing.tmp");
+    private static final File FILE = new File(TEMP_PATH+File.separator+"tmp_isUsing.tmp");
 
-    /**GUI存活与否*/
+    /**这个布尔值关系着GUI存活与否*/
     private boolean isCycling = true;
 
 
     /**构造函数负责初始化整个GUI图形界面*/
     public GUI(Logger logger) {
         /*先头初始化*/
-        this.generalSetUp(this, FILE);
-        /*初始化Logger*/
+        this.generalSetUp(this);
         LOGGER = logger;
+
         /*主体部分*/
-        JPanel mainPanel = getNewBorderPanel();
+        JPanel mainPanel = new JPanel(new BorderLayout());
 
-        /*文件选择部分*/
-        JPanel filePanel = getNewBorderPanel();
+        /*文件选择与加密模式选择部分*/
+        JPanel filePanel = new JPanel(new BorderLayout());
         JTextField fileTextField = new JTextField();
-        this.fileSelectorInit(fileTextField, filePanel);
+        JComboBox<AESLogicLib.KeyLength> modeBox = new JComboBox<>();
+        this.fileSelectorAndAESModeInit(fileTextField, modeBox, filePanel);
 
-        /*密码输入部分*/
-        JPanel passwordPanel = getNewBorderPanel();
+        /*密码相关输入部分*/
+        JPanel passwordPanel = new JPanel(new BorderLayout());
+        JComboBox<String> saltComboBox = new JComboBox<>();
+        JCheckBox saltUse = new JCheckBox("使用");
         JPasswordField userPasswordField = new JPasswordField();
-        this.passwordAreaInit(userPasswordField, passwordPanel);
-
+        JSpinner iterationSpinner = new JSpinner();
+        JCheckBox iterationUse = new JCheckBox("使用");
+        this.passwordAreaInit(saltComboBox, saltUse, userPasswordField, iterationSpinner, iterationUse, passwordPanel);
+        // TODO: 2023/8/22 add function supports for different kinds of formatting SecretKeySpec. 
         /*加密解密模式选择部分*/
         JPanel buttonPanel = new JPanel();
         this.modeButtonInit(fileTextField, userPasswordField, this.ENCRYPT_BUTTON, this.DECRYPT_BUTTON, buttonPanel);
@@ -68,81 +75,106 @@ public class GUI extends JFrame {
         mainPanel.add(filePanel, BorderLayout.NORTH);
         mainPanel.add(passwordPanel, BorderLayout.CENTER);
         mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+
         /*将主体JPanel添加至JFrame*/
         this.add(mainPanel);
     }
 
-    /**增加代码复用性添加の创建器*/
-    @Contract(" -> new")
-    private @NotNull JPanel getNewBorderPanel(){
-        return new JPanel(new BorderLayout());
-    }
-
     /**最基础的属性显示设置*/
-    @SuppressWarnings("all")
-    private void generalSetUp(@NotNull JFrame frame, File tempFile){
-        /*管理运行时の独立线程*/
-        new Thread(() ->{
-            while (isCycling){
-                while (!FILE.exists()){
+    private void generalSetUp(@NotNull JFrame frame){
+        /*管理运行时の独立计时任务*/
+        TIMER.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                if (isCycling && !FILE.exists()){
                     /*尝试创建Temp文件*/
                     try {
-                        createAccessTemp(tempFile);
-                        Thread.sleep(200);
-                    } catch (IOException | InterruptedException e) {
-                        e.printStackTrace();
+                        createAccessTemp();
+                    } catch (IOException e) {
+                        ReportUtil.reportError(LOGGER,Level.WARNING, this.getClass(), GUI.class,
+                                "create temp file(running tag)", ReportUtil.ReportFormer.IO, e);
                     }
                 }
-                try {
-                    Thread.sleep(200);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
             }
-        }).start();
+        },0,200);
 
         /*基础窗口设置*/
         frame.setTitle("文件加密/解密器(AES)");
+        frame.setIconImage(IMGReference.LOGO.getImage());
         frame.setDefaultCloseOperation(EXIT_ON_CLOSE);
         frame.setSize(400, 200);
         frame.setLocationRelativeTo(null);
 
-        /*关闭时设置*/
+        /*关闭时的动作*/
         frame.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-                //记得删Temp啊喂
+                //记得删Temp啊喂(虽然下次启动会尝试删除)
                 isCycling = false;
-                deleteAccessTemp(tempFile);
+                deleteAccessTemp();
                 try {
                     Thread.sleep(200);
                 } catch (InterruptedException ex) {
-                    ex.printStackTrace();
+                    ReportUtil.reportError(LOGGER, Level.WARNING, this.getClass(), GUI.class,
+                            "delete tag of running", ReportUtil.ReportFormer.THREAD_SLEEP, ex);
                 }
                 super.windowClosing(e);
             }
         });
     }
 
-    /**供给文件选择器の初始化操作*/
-    private void fileSelectorInit(@NotNull JTextField field, @NotNull JPanel panel){
+    /**供给文件和模式选择器の初始化操作*/
+    private void fileSelectorAndAESModeInit(@NotNull JTextField field, @NotNull JComboBox<AESLogicLib.KeyLength> box, @NotNull JPanel panel){
         /*文本域初始化设定*/
         field.setEditable(false);
+
+        /*下拉选择表的相关设置*/
+        box.addItem(AESLogicLib.KeyLength.AES_128);
+        box.addItem(AESLogicLib.KeyLength.AES_192);
+        box.addItem(AESLogicLib.KeyLength.AES_256);
 
         /*选择按钮初始化设定*/
         JButton fileButton = new JButton("选择文件");
         fileButton.addActionListener(e -> selectFile(this, field, "jEAl_const"));
 
         /*添加上述模块*/
+        panel.add(box, BorderLayout.WEST);
         panel.add(field, BorderLayout.CENTER);
         panel.add(fileButton, BorderLayout.EAST);
     }
 
     /**供给密码域の初始化操作*/
-    private void passwordAreaInit(@NotNull JPasswordField field, @NotNull JPanel panel){
-        /*密码区前部说明文字设置*/
-        JLabel textLabel = new JLabel("密码:");
+    private void passwordAreaInit(
+            @NotNull JComboBox<String> saltComboBox, @NotNull JCheckBox saltCheckbox,
+            @NotNull JPasswordField field,
+            @NotNull JSpinner iterationSpinner, @NotNull JCheckBox iterationCheckbox,
+            @NotNull JPanel panel
+    ){
+        saltComboBox.addItem("16(默认)");
+        saltComboBox.addItem("24");
+        saltComboBox.addItem("48");
+        saltComboBox.addItem("64");
 
+        iterationSpinner.setValue(10000);
+
+        /*密码设置区前部说明文字设置*/
+        JPanel textPanel = new JPanel(new BorderLayout());
+        JLabel saltIntro = new JLabel("盐值:");
+        JLabel passwordIntro = new JLabel("密码:");
+        JLabel iterationIntro = new JLabel("迭代数量(建议大于1万):");
+        saltIntro.setForeground(Color.lightGray);
+        iterationIntro.setForeground(Color.lightGray);
+        textPanel.add(saltIntro, BorderLayout.NORTH);
+        textPanel.add(passwordIntro, BorderLayout.CENTER);
+        textPanel.add(iterationIntro, BorderLayout.SOUTH);
+
+        JPanel inputFoldPanel = new JPanel(new BorderLayout());
+        saltComboBox.setEnabled(false);
+        iterationSpinner.setEnabled(false);
+        saltCheckbox.addActionListener(e -> {
+            saltComboBox.setEnabled(saltCheckbox.isSelected());
+            saltIntro.setForeground(saltCheckbox.isSelected()?Color.BLACK:Color.lightGray);
+        });
         /*密码区明文与不可见切换按钮设置*/
         JButton button = new JButton("显示");
         button.addActionListener(e -> {
@@ -154,11 +186,24 @@ public class GUI extends JFrame {
                 button.setText("显示");
             }
         });
+        iterationCheckbox.addActionListener(e -> {
+            iterationSpinner.setEnabled(iterationCheckbox.isSelected());
+            iterationIntro.setForeground(iterationCheckbox.isSelected()?Color.BLACK:Color.lightGray);
+        });
+        inputFoldPanel.add(saltComboBox, BorderLayout.NORTH);
+        inputFoldPanel.add(field, BorderLayout.CENTER);
+        inputFoldPanel.add(iterationSpinner, BorderLayout.SOUTH);
+
+        JPanel switchesButtonFold = new JPanel(new BorderLayout());
+
+        switchesButtonFold.add(saltCheckbox, BorderLayout.NORTH);
+        switchesButtonFold.add(button, BorderLayout.CENTER);
+        switchesButtonFold.add(iterationCheckbox, BorderLayout.SOUTH);
 
         /*添加上述模块*/
-        panel.add(textLabel, BorderLayout.WEST);
-        panel.add(field, BorderLayout.CENTER);
-        panel.add(button, BorderLayout.EAST);
+        panel.add(textPanel, BorderLayout.WEST);
+        panel.add(inputFoldPanel, BorderLayout.CENTER);
+        panel.add(switchesButtonFold, BorderLayout.EAST);
     }
 
     /**供给模式选择部分の初始化操作*/
@@ -174,17 +219,26 @@ public class GUI extends JFrame {
         panel.add(DECRYPT_BUTTON);
     }
 
+    public static boolean tempExist(){
+        return FILE.exists();
+    }
     /**作为每刻仅允许一个窗口启动のTemp*/
     @SuppressWarnings("all")
-    public static void createAccessTemp(@NotNull File file) throws IOException {
-        if (file.exists())return;
-        file.createNewFile();
+    public static boolean createAccessTemp() throws IOException {
+        return FILE.createNewFile();
     }
 
     /**退出时删除Temp*/
     @SuppressWarnings("all")
-    public static void deleteAccessTemp(@NotNull File file){
-        file.delete();
+    public static boolean deleteAccessTemp(){
+        return FILE.delete();
+    }
+
+    public void discardedFileDelete(@NotNull File file){
+        if (!file.delete()){
+            ReportUtil.report(LOGGER, Level.WARNING, this.getClass(), GUI.class,
+                    "delete file at error", ReportUtil.ReportFormer.DELETE_FILE);
+        }
     }
 
     /**供给提示弹窗の重写+初始化操作,唯一一个方法直接引用主类变量的地方*/
@@ -226,7 +280,8 @@ public class GUI extends JFrame {
             AESLogicLib.KeyFormer former = new AESLogicLib.KeyFormer(password, LOGGER);
             AESLogicLib.encryptFileWithName(new File(inputFile), encryptedFile,  former, LOGGER);
         } catch (SaltInputException | NoSuchAlgorithmException | InvalidKeySpecException e) {
-            LOGGER.log(Level.SEVERE, "Exception was thrown during encrypt file:", e);
+            ReportUtil.reportError(LOGGER, Level.SEVERE, this.getClass(), GUI.class,
+                    "encrypt file", ReportUtil.ReportFormer.ENCRYPT_FAILURE, e);
         }
 
         /*任务结束，停止阻塞*/
@@ -234,7 +289,6 @@ public class GUI extends JFrame {
     }
 
     /**解密文件の方法*/
-    @SuppressWarnings("all")
     private void decryptFile(@NotNull JTextField textField, @NotNull JPasswordField passwordField) {
         /*阻塞按钮防止对最终信息修改*/
         trace();
@@ -250,30 +304,39 @@ public class GUI extends JFrame {
             return;
         }
 
-
         /*执行解密*/
         try {
             AESLogicLib.KeyFormer former = new AESLogicLib.KeyFormer(password, LOGGER);
             String newName = AESLogicLib.decryptFileWithName(new File(inputFile), decryptedFile, former, LOGGER);
 
-            /*抓取解密错误*/
+            /*抓取解密错误并直接退出*/
             if(Objects.equals(newName, "error")){
                 JOptionPane.showMessageDialog(null, "也许是秘钥错误，请检查秘钥是否正确！", "发生严重错误", JOptionPane.ERROR_MESSAGE);
-                decryptedFile.delete();
+                discardedFileDelete(decryptedFile);
                 unTrace();
                 return;
             }
 
             /*重命名解密文件,如果冲突则询问*/
             File newFile = new File(decryptedFile.getParentFile().getAbsolutePath() + File.separator + newName);
-            decryptedFile.renameTo(askForSameNameFileRename(decryptedFile, newFile));
+            File askBack = askForSameNameFileRename(decryptedFile, newFile);
 
-        } catch (SaltInputException e) {
-            throw new RuntimeException(e);
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        } catch (InvalidKeySpecException e) {
-            throw new RuntimeException(e);
+            if (askBack.getName().equals("error")){//旧文件删除失败的处理
+                JOptionPane.showMessageDialog(null, "删旧文件失败！请手动删除要替换的文件，或选择新的文件夹！", "发生严重错误", JOptionPane.ERROR_MESSAGE);
+                discardedFileDelete(decryptedFile);
+            } else {
+                if (decryptedFile.exists()) {
+                    if (!decryptedFile.renameTo(askBack)) {
+                        //对缓存重命名失败的处理
+                        JOptionPane.showMessageDialog(null, "重命名缓存失败！请手动重命名文件为:" + newName, "发生严重错误", JOptionPane.ERROR_MESSAGE);
+                    }
+                } else {
+                    JOptionPane.showMessageDialog(null, "缓存文件丢失！请不要随意删除输出产生的缓存文件！", "发生严重错误", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        } catch (SaltInputException | NoSuchAlgorithmException | InvalidKeySpecException e) {
+            ReportUtil.reportError(LOGGER, Level.SEVERE, this.getClass(), GUI.class,
+                    "decrypt file", ReportUtil.ReportFormer.ILLEGAL_PASSWORD, e);
         }
 
         //任务结束，停止阻塞
@@ -281,31 +344,22 @@ public class GUI extends JFrame {
     }
 
     /**检查并对文件做一些基础设置*/
-    @SuppressWarnings("all")
     private @NotNull File askForSameNameFileRename(File redyFile, @NotNull File file){
-        Random random = new Random();
         /*如果文件存在，弹窗要求回应，并通过回应决定返回旧文件还是新文件*/
         if (file.exists()) {
             /*调用弹窗初始化和显示*/
             dialogInit(file.getName());
-            /*循环检查用户输入是否完成，约等于阻塞到用户返回*/
-            while (!dialog.knockBack) {
-                try {
-                    Thread.sleep(200);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
             //此时返回已完成
             if (dialog.answer) {
-                file.delete();
-                return file;
+                if (!file.delete()) return new File("error");
             } else {
-                return new File(redyFile.getParentFile().getAbsolutePath() + File.separator + (random.nextInt(65536) + 65536) + file.getName());
+                //反复尝试直到新路径的文件不存在
+                for (int index = 1; file.exists(); index++){
+                    file = new File(redyFile.getParentFile().getAbsolutePath() + File.separator + "("+index+")" + file.getName());
+                }
             }
-        } else {
-            return file;
         }
+        return file;
     }
 
     /**对窗口内容阻塞，禁止其它操作*/
@@ -436,7 +490,8 @@ class AskForReWrite extends JDialog{
                 try {
                     Thread.sleep(200);
                 } catch (InterruptedException ex) {
-                   LOGGER.log(Level.SEVERE, "JDialog was thrown an sleeping exception on Thread.", ex);
+                    ReportUtil.reportError(LOGGER, Level.WARNING, this.getClass(), GUI.class,
+                            "close window", ReportUtil.ReportFormer.THREAD_SLEEP, ex);
                 }
                 super.windowClosing(e);
             }

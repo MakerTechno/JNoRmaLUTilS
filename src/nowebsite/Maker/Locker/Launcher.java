@@ -17,8 +17,8 @@ public class Launcher {
 
     /**如果文件存在，尝试删一下，毕竟有可能是之前宕机没删。不存在，那就直接上*/
     private static boolean startGUI(){
-        if (GUI.FILE.exists()){
-            GUI.deleteAccessTemp(GUI.FILE);
+        if (GUI.tempExist()){
+            GUI.deleteAccessTemp();
             try {
                 Thread.sleep(300);
             } catch (InterruptedException e) {

@@ -39,6 +39,13 @@ public class AESLogicLib {
             else if (this.equals(AES_192)) return 192;
             else return 256;
         }
+
+        @Override
+        public String toString() {
+            if (this.equals(AES_128))return "128位AES(推荐)";
+            if (this.equals(AES_192))return "192位AES";
+            else return "256位AES";
+        }
     }
 
     public static class KeyFormer{
@@ -128,7 +135,7 @@ public class AESLogicLib {
      * @param mode Encrypt or decrypt, Please use {@link Cipher#ENCRYPT_MODE}/{@link Cipher#DECRYPT_MODE} only.
      * @param withFileName True if you need to remember it. But be careful if the file was not doing the same before.
      * @return A string with fileName,
-     * null if run with "no filename",
+     * null if run with "no filename" or with encrypt mode,
      * "error" if the progress failed or not the expected mode.*/
     public static String encryptOrDecryptFile(
             File inputFile, File outputFile, KeyFormer former, int mode, boolean withFileName, Logger logger) {
@@ -162,8 +169,8 @@ public class AESLogicLib {
     }
     /**Encrypt the file WITH ITS FILE NAME and output to the output path.
      IT MUST DECRYPT WITH FILENAME.*/
-    public static String encryptFileWithName(@NotNull File inputFile, File outputFile, KeyFormer former, Logger logger) {
-        return encryptOrDecryptFile(inputFile, outputFile, former,Cipher.ENCRYPT_MODE, true, logger);
+    public static void encryptFileWithName(@NotNull File inputFile, File outputFile, KeyFormer former, Logger logger) {
+        encryptOrDecryptFile(inputFile, outputFile, former,Cipher.ENCRYPT_MODE, true, logger);
     }
     /**Simply decrypt the file and output to the output path.*/
     public static void decryptFile(File inputFile, File outputFile, KeyFormer former, Logger logger){
@@ -192,7 +199,7 @@ public class AESLogicLib {
                 //Get the filename first.
                 int fileNameLength = inputStream.read();
                 byte[] fileNameBytes = new byte[fileNameLength];
-                inputStream.read(fileNameBytes);
+                if (inputStream.read(fileNameBytes) == -1) throw new EOFException("Are you kidding me? there's nothing to read!");
                 fileName = new String(fileNameBytes, StandardCharsets.UTF_8);
             }
         } else {
